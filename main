@@ -1,0 +1,121 @@
+import string, requests, os
+from bs4 import BeautifulSoup
+
+ARTICLES_URL = "https://nature.com/nature/articles?sort=PubDate&year=2020&page=$page_number"
+ARTICLE_ROOT = "https://nature.com"
+
+
+def save_to_file(file_name, body):
+    """
+    Save the article body to file_name
+    """
+    try:
+        file = open(file_name, "wb")
+        file.write(body)
+        file.close()
+    except IOError:
+        print("Could not save to file!")
+
+
+def create_file_name(title):
+    """
+    Create an article name replacing whitespace and punctuation with underscores
+    """
+    new_title = []
+
+    for char in title:
+        if char in string.punctuation or char in string.whitespace:
+            new_title.append("_")
+        else:
+            new_title.append(char)
+
+    return "".join(new_title) + ".txt"
+
+
+def laod_article(title, url, current_page_number):
+    """
+    Load the article page for parsing
+    """
+    directory = "Page_$page_number"
+    template = string.Template(directory)
+    compliment = template.substitute(page_number=current_page_number)
+    try:
+        req_url = f"{ARTICLE_ROOT}{url}"
+
+        response = requests.get(req_url)
+
+        if response.status_code != 200:
+            raise ValueError
+    except ValueError:
+        print(f"Fetching {req_url} returned status code {response.status_code}!")
+    else:
+        current_directory = os.getcwd()
+        path = os.path.join(current_directory, compliment)
+        if os.path.exists(path):
+            os.chdir(compliment)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            body = soup.find("div", {"class": "c-article-body"}).text.strip().encode()
+            file_name = create_file_name(title)
+            save_to_file(file_name, body)
+        else:
+            os.mkdir(path)
+            os.chdir(compliment)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            body = soup.find("div", {"class": "c-article-body"}).text.strip().encode()
+            file_name = create_file_name(title)
+            save_to_file(file_name, body)
+        os.chdir(current_directory)
+
+def get_article_url_and_title(article):
+    """
+    Get the article url and title
+    """
+    attributes = [
+        article.find('a').contents[0],
+        article.find('a', attrs={"data-track-action": "view article"})['href']
+    ]
+
+    return attributes
+
+
+def get_articles_from(url):
+    """
+    Get the list of articles from URL
+    """
+    page_number = int(input())
+    article_type = input()
+    for current_page_number in range(1, page_number + 1):
+        template = string.Template(url)
+        compliment = template.substitute(page_number=current_page_number)
+        try:
+            response = requests.get(compliment)
+
+            if response.status_code != 200:
+                raise ValueError
+        except ValueError:
+            print(f"The URL returned status code: {response.status_code}!")
+        else:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            articles = soup.find_all('article')
+            for entry in articles:
+                if entry.find('span', {"data-test": "article.type"}).text.strip() == article_type:
+                    article_url = entry.find("a", {"data-track-action": "view article"}).get("href").strip()
+                    article_title = entry.find("a", {"data-track-action": "view article"}).text.strip()
+                    laod_article(article_title, article_url, current_page_number)
+                else:
+                    create_dir(current_page_number)
+
+def create_dir(page_number):
+    directory = "Page_$page_number"
+    template = string.Template(directory)
+    compliment = template.substitute(page_number=page_number)
+    current_directory = os.getcwd()
+    path = os.path.join(current_directory, compliment)
+    if os.path.exists(path):
+        os.chdir(compliment)
+    else:
+        os.mkdir(path)
+        os.chdir(compliment)
+    os.chdir(current_directory)
+
+get_articles_from(ARTICLES_URL)
